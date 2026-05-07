@@ -2,6 +2,9 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getDomainFromUrl } from "@/lib/llm/citations";
 import { getLlmRunner } from "@/lib/llm/runners";
 import { logger } from "@/lib/logger";
+import { type BrandForDetection, detectBrands } from "@/lib/parser/brand-detection";
+import { computeBrandConsistency } from "@/lib/parser/consistency";
+import { computeSentiment } from "@/lib/parser/sentiment";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database";
 
@@ -11,10 +14,15 @@ type RunRouteContext = {
 
 type PromptWithLlms = {
   id: string;
+  workspace_id: string;
   text: string;
   country: string | null;
   language: string | null;
   prompt_llms: { llm_id: string }[];
+};
+
+type BrandRow = BrandForDetection & {
+  isOwn: boolean;
 };
 
 function toErrorMessage(error: unknown) {
@@ -36,7 +44,7 @@ export async function POST(_request: NextRequest, context: RunRouteContext) {
 
   const { data: prompt, error: promptError } = await supabase
     .from("prompts")
-    .select("id,text,country,language,prompt_llms(llm_id)")
+    .select("id,workspace_id,text,country,language,prompt_llms(llm_id)")
     .eq("id", id)
     .single();
 
@@ -45,6 +53,25 @@ export async function POST(_request: NextRequest, context: RunRouteContext) {
   }
 
   const typedPrompt = prompt as PromptWithLlms;
+  const [{ data: brands }, { data: workspace }] = await Promise.all([
+    supabase
+      .from("brands")
+      .select("id,name,aliases,is_own")
+      .eq("workspace_id", typedPrompt.workspace_id)
+      .eq("is_tracked", true),
+    supabase
+      .from("workspaces")
+      .select("brand_statement")
+      .eq("id", typedPrompt.workspace_id)
+      .single(),
+  ]);
+  const brandRows: BrandRow[] = (brands ?? []).map((brand) => ({
+    id: brand.id,
+    name: brand.name,
+    aliases: brand.aliases ?? [],
+    isOwn: brand.is_own ?? false,
+  }));
+  const ownBrandIds = new Set(brandRows.filter((brand) => brand.isOwn).map((brand) => brand.id));
   const results = [];
 
   for (const promptLlm of typedPrompt.prompt_llms) {
@@ -98,6 +125,68 @@ export async function POST(_request: NextRequest, context: RunRouteContext) {
       if (runError || !promptRun) {
         throw runError ?? new Error("No se pudo guardar la ejecucion");
       }
+
+      await Promise.all([
+        supabase.from("mentions").delete().eq("prompt_run_id", promptRun.id),
+        supabase.from("sources").delete().eq("prompt_run_id", promptRun.id),
+      ]);
+
+      const detections = detectBrands(runResult.text, brandRows);
+      const enrichedMentions = await Promise.all(
+        detections.map(async (detection) => {
+          const [sentiment, consistency] = await Promise.all([
+            computeSentiment(detection.context),
+            ownBrandIds.has(detection.brandId)
+              ? computeBrandConsistency(workspace?.brand_statement ?? null, detection.context)
+              : Promise.resolve(null),
+          ]);
+
+          return { detection, sentiment, consistency };
+        }),
+      );
+
+      if (enrichedMentions.length > 0) {
+        const { error: mentionsError } = await supabase.from("mentions").insert(
+          enrichedMentions.map(({ detection, sentiment }) => ({
+            prompt_run_id: promptRun.id,
+            brand_id: detection.brandId,
+            position: detection.position,
+            context: detection.context,
+            sentiment: sentiment.sentiment,
+            sentiment_score: sentiment.score,
+            detected_via: detection.detectedVia,
+          })),
+        );
+
+        if (mentionsError) {
+          logger.warn({ error: mentionsError }, "No se pudieron guardar menciones");
+        }
+      }
+
+      const ownMentions = enrichedMentions.filter(({ detection }) =>
+        ownBrandIds.has(detection.brandId),
+      );
+      const firstOwnMention = ownMentions[0];
+      const consistencyScores = ownMentions
+        .map(({ consistency }) => consistency)
+        .filter((score): score is number => typeof score === "number");
+      const avgConsistency =
+        consistencyScores.length > 0
+          ? consistencyScores.reduce((sum, score) => sum + score, 0) / consistencyScores.length
+          : null;
+
+      await supabase
+        .from("prompt_runs")
+        .update({
+          brand_mentioned: ownMentions.length > 0,
+          brand_position: firstOwnMention?.detection.position ?? null,
+          brand_sentiment: firstOwnMention?.sentiment.sentiment ?? null,
+          brand_consistency_score: avgConsistency,
+          total_brands_mentioned: new Set(
+            enrichedMentions.map(({ detection }) => detection.brandId),
+          ).size,
+        })
+        .eq("id", promptRun.id);
 
       if (runResult.citations.length > 0) {
         const { error: sourcesError } = await supabase.from("sources").insert(
