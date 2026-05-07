@@ -1,10 +1,11 @@
 -- =========== EXTENSIONES ===========
 create extension if not exists "uuid-ossp";
+create extension if not exists "pgcrypto";
 create extension if not exists "pg_trgm";
 
 -- =========== USUARIOS Y WORKSPACES ===========
 create table workspaces (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   name text not null,
   domain text,
   brand_name text not null,
@@ -42,7 +43,7 @@ insert into llm_providers (id, name, cost_per_million_input, cost_per_million_ou
 
 -- =========== PROMPTS ===========
 create table prompts (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces(id) on delete cascade,
   text text not null,
   country text default 'ES',
@@ -64,7 +65,7 @@ create table prompt_llms (
 
 -- =========== EJECUCIONES ===========
 create table responses (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   raw_text text not null,
   raw_json jsonb,
   tokens_in int default 0,
@@ -73,7 +74,7 @@ create table responses (
 );
 
 create table prompt_runs (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   prompt_id uuid not null references prompts(id) on delete cascade,
   llm_id text not null references llm_providers(id),
   ran_at timestamptz default now(),
@@ -87,7 +88,7 @@ create table prompt_runs (
   cost_usd numeric default 0,
   latency_ms int,
   error text,
-  date_bucket date generated always as (ran_at::date) stored,
+  date_bucket date generated always as ((ran_at at time zone 'UTC')::date) stored,
   unique (prompt_id, llm_id, date_bucket)
 );
 
@@ -95,7 +96,7 @@ create index prompt_runs_prompt_ran_at_idx on prompt_runs (prompt_id, ran_at des
 
 -- =========== MARCAS Y MENCIONES ===========
 create table brands (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces(id) on delete cascade,
   name text not null,
   aliases text[] default '{}',
@@ -109,7 +110,7 @@ create table brands (
 create unique index brands_workspace_name_idx on brands (workspace_id, lower(name));
 
 create table mentions (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   prompt_run_id uuid not null references prompt_runs(id) on delete cascade,
   brand_id uuid not null references brands(id) on delete cascade,
   position int,
@@ -123,7 +124,7 @@ create index mentions_brand_run_idx on mentions (brand_id, prompt_run_id);
 
 -- =========== SOURCES ===========
 create table sources (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   prompt_run_id uuid not null references prompt_runs(id) on delete cascade,
   url text not null,
   domain text not null,
