@@ -13,6 +13,7 @@ import { parseAsString, useQueryState } from "nuqs";
 import { useMemo } from "react";
 import { updatePromptStatusAction } from "@/lib/actions/prompts";
 import { cn } from "@/lib/utils";
+import { RunPromptButton } from "./run-prompt-button";
 import type { PromptTableRow } from "./types";
 
 type PromptsTableProps = {
@@ -145,14 +146,20 @@ export function PromptsTable({ rows, workspaceSlug }: PromptsTableProps) {
           const nextStatus = row.original.status === "active" ? "paused" : "active";
 
           return (
-            <form action={updatePromptStatusAction}>
-              <input name="promptId" type="hidden" value={row.original.id} />
-              <input name="workspaceSlug" type="hidden" value={workspaceSlug} />
-              <input name="status" type="hidden" value={nextStatus} />
-              <button className="font-medium text-sm hover:underline" type="submit">
-                {nextStatus === "active" ? "Activar" : "Pausar"}
-              </button>
-            </form>
+            <div className="space-y-2">
+              <RunPromptButton promptId={row.original.id} />
+              <form action={updatePromptStatusAction}>
+                <input name="promptId" type="hidden" value={row.original.id} />
+                <input name="workspaceSlug" type="hidden" value={workspaceSlug} />
+                <input name="status" type="hidden" value={nextStatus} />
+                <button
+                  className="text-muted-foreground text-sm hover:text-foreground"
+                  type="submit"
+                >
+                  {nextStatus === "active" ? "Activar" : "Pausar"}
+                </button>
+              </form>
+            </div>
           );
         },
       },
