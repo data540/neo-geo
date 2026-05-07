@@ -72,7 +72,7 @@ export function AppSidebar({ workspaces, userEmail, logoutAction }: AppSidebarPr
         <nav className="grid gap-1 text-sm">
           {workspaceNavItems.map((item) => {
             const href = `/${currentWorkspaceSlug}/${item.href}`;
-            const isActive = pathname === href;
+            const isActive = pathname === href || pathname.startsWith(`${href}/`);
             const Icon = item.icon;
 
             return (
