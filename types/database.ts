@@ -506,6 +506,10 @@ export type Database = {
         Args: { target_workspace_id: string };
         Returns: boolean;
       };
+      is_workspace_owner: {
+        Args: { target_workspace_id: string };
+        Returns: boolean;
+      };
       show_limit: { Args: never; Returns: number };
       show_trgm: { Args: { "": string }; Returns: string[] };
     };
