@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createWorkspaceAction } from "@/lib/actions/workspace";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { toWorkspaceSlug } from "@/lib/workspace";
 
 type OnboardingPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -24,12 +25,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
   const existingWorkspace = memberships?.[0]?.workspaces;
 
   if (existingWorkspace?.name) {
-    const slug = existingWorkspace.name
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+    const slug = toWorkspaceSlug(existingWorkspace.name);
 
     redirect(`/${slug || "workspace"}/dashboard`);
   }

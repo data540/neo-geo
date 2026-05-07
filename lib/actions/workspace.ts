@@ -4,16 +4,7 @@ import { redirect } from "next/navigation";
 import { logger } from "@/lib/logger";
 import { getStringValue, workspaceSchema } from "@/lib/schemas/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-function toWorkspaceSlug(name: string) {
-  return name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 48);
-}
+import { toWorkspaceSlug } from "@/lib/workspace";
 
 function cleanOptionalValue(value: string) {
   const trimmed = value.trim();
